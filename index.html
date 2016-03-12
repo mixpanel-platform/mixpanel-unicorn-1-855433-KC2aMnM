@@ -19,13 +19,35 @@
         margin-right: 8px;
         display: inline-block;
       }
-      #event_list {
+      .date_select.inline.block, .event_select.inline.block, .right-arrow, #add {
         display: inline-block;
+        vertical-align: middle;
+      }
+      .event_select.inline.block {
+        max-width: 200px;
+        margin: 10px 0;
+      }
+      .dates {
+        margin-bottom: 20px;
+      }
+      .right-arrow {
+      	background: url(//cdn.mxpnl.com/cache/0a836ac387413f8cfa0ac97c5618c8bf/images/reports/arrow-dropshadow.png) no-repeat;
+      	background-position: 0 0;
+      	height: 10px;
+      	width: 10px;
+      	margin: 10px;
+      }
+      #add {
+      	background: url(https://cdn.mxpnl.com/cache/db85795727e3c42d2865a215cd85876a/images/reports/funnels3/new_row_spritesheet.png);
+      	width: 30px;
+      	height: 30px;
+      	cursor: pointer;
+      	position: relative;
+      	margin-left: 15px;
       }
       #run, #funnel-query, .alert-ok {
         clear:both;
         vertical-align: 1px;
-        margin-left: 10px;
         padding: 6px 12px;
         background-color: #61adf0;
         background-image: -webkit-linear-gradient(#6ab5f2,#53a0ee);
@@ -38,34 +60,21 @@
         border-radius: 3px;
         cursor: pointer;
         font-weight: bold;
+      }
+      #run {
+        max-width: 26px;
+      }
+      #funnel-query, .alert-ok {
         display: inline-block;
+        margin-left: 10px;
       }
-      #dates {
-        float: right;
+      #events {
+        margin: 10px 0;
       }
-      input {
-        font-family:  system, -apple-system, ".SFNSDisplay-Regular", "Helvetica Neue", sans-serif;
-        font-weight: normal;
-        letter-spacing: 0.03em;
-        font-size: 13px;
-        color: #747d94;
-        height: 20px;
-        width: 355px;
-        margin: 0 0 10px 0;
-        padding: 5px;
-        border: 1px solid #bdc7d2;
-        -webkit-border-radius: 3px;
-        border-radius: 3px;
-        position: relative;
-        -webkit-appearance: textfield;
-        background-color: white;
-      }
-      input:focus, input:hover {
-        outline: 0;
-        border-color: #5ba7e1;
-      }
+      
       #report {
         margin: 20px 0 55px;
+        display: none;
       }
       #background {
         background-color: #fdfdfd;
@@ -208,7 +217,7 @@
         margin: 0 auto;
         left: 0;
         right: 0;
-        top: 50%;
+        top: 30%;
         margin-top: -75px;
         z-index: 20;
         background-color: #fbfbfb;
@@ -236,12 +245,15 @@
     </style>
 
     <div class="mixpanel-platform-section">
-      <div id="dates"></div>
-      <div class="events">
-        <div class="events_label">Funnel Steps:</div>
-        <input id="event_list" value="Viewed Page,Song Played">
-        <div id="run">RUN</div>
+      <div class="dates">
+        <div class="events_label">Date Range:</div>
+        <div id="dates" class="date_select inline block"></div>
       </div>
+      <div id="events">
+        <div class="events_label">Funnel Steps:</div>
+        <div id="add"></div>
+      </div>
+      <div id="run">RUN</div>
       <div id="report">
         <div id="background">
           <div id="axis">
@@ -274,37 +286,36 @@
       </div>
     </div>
     <script>
-      var event_list = $('#event_list').val().split(',');
+      var event_list = [];
       var path_length = 3;
       var funnel_select = [];
+      
+      // add events
+      var $events = $('#events');
+      var $add = $('#events').find('#add');
+      
+      function addEvent(i) {
+        if (i > 0) {
+          $('<div class="right-arrow"></div>').insertBefore($add);
+        }
+        var eventSelect = $('<div class="event_select inline block" id="' + i + '"></div>').insertBefore($add).MPEventSelect();
+      }
+      function resetEvents() {
+        // clear event dropdowns
+        $('.event_select').remove();
+        $('.right-arrow').remove();
+        addEvent(0);
+      }
 
-      // runQuery
       $(document).ready(function() {
-        runQuery();
+        addEvent(0);
       });
-      $('#dates').on('change', function() {
-        runQuery();
+      $('#add').on('click', function() {
+        var numEvents = $('.event_select').length;
+        addEvent(numEvents);
       });
-      $('#run').on('click', function() {
-        runQuery();
-      });
-      $('#funnel-query').on('click', function() {
-        var newEvents = [];
-
-        var root = d3.selectAll(".root");
-        root.each(function(d,i) {
-          var index = d.name.indexOf(':');
-          newEvents.push(d.name.substr(index+2));
-
-          var result = getFlowSteps(d, newEvents);
-          if (result != 'error' && result != undefined) {
-            newEvents = newEvents.toString();
-            $('#event_list').val(newEvents);
-            runQuery();
-          }
-        });
-      });
-
+      
+      // error alerts
       function error(message) {
         var alert = $('<div class="alert"><div class="alert-title">Error</div><div class="alert-content">' + message + '</div><div class="alert-ok">OK</div></div>');
         alert.appendTo('body').fadeIn(200);
@@ -313,20 +324,50 @@
       $('body').on('click', '.alert-ok', function() {
           $('.alert').remove();
       });
-
-      // custom query
-      function runQuery() {
-        // set up parameters
-        event_list = $('#event_list').val().split(',');
-        if (event_list.length < 2) {
-          error('Must have more than one event in a funnel. Events can be selected or deselected by clicking on the event name or applicable node.');
-          return;
+      
+      // runQuery
+      $('#dates').on('change', function() {
+        runQuery();
+      });
+      $('#run').on('click', function() {
+        var events = [];
+        for (var i = 0, j = $('.event_select').length; i < j; i++) {
+          var eventName = $($('.event_select')[i]).val();
+          if (eventName != null) {
+            events.push(eventName);
+          }
         }
+        event_list = events;
+        runQuery();
+      });
+      $('#funnel-query').on('click', function() {
+        var newEvents = [];
         
+        var root = d3.selectAll(".root");
+        root.each(function(d,i) {
+          var index = d.name.indexOf(':');
+          newEvents.push(d.name.substr(index+2));
+
+          var result = getFlowSteps(d, newEvents);
+          if (result != 'error' && result != undefined) {
+            resetEvents();
+            event_list = newEvents;
+            runQuery();
+          }
+        });
+      });
+
+      function runQuery() {
         // clear previous query
         $('#funnel').html('');
         $('.flow').hide();
 
+        if (event_list.length < 2) {
+          error('Must have more than one event in a funnel. Ensure there are multiple events selected in your dropdowns. In a flow, events can be selected or deselected by clicking on the event name or applicable node.');
+          return;
+        }
+
+        // set up parameters
         var dateVal = $('#dates').val();
         var queryParams = {
             event_list: event_list,
@@ -348,6 +389,7 @@
             }
           }
         });
+        $('#report').show();
       }
 
       // create funnel
@@ -621,7 +663,7 @@
           });
         });
         if (nodeChildren.length > 1) {
-          error('Multiple events selected in a step. Please select only one event per step. Events can be selected or deselected by clicking on the event name or applicable node.')
+          error('Multiple events selected in a step. Please select only one event per step. Events can be selected or deselected by clicking on the event name or applicable node.');
           console.log('error');
           return 'error';
         }
@@ -634,8 +676,8 @@
     </script>
     
     <script type="text/cq" id="cq">
-      var EVENT_LIST = params.event_list || ['homepage new', 'Viewed report', 'Funnel query'];
-      var PATH_LENGTH =  params.path_length || 4;
+      var EVENT_LIST = params.event_list;
+      var PATH_LENGTH =  params.path_length || 3;
       
       function main() {
           return Events({
